@@ -9,7 +9,7 @@ Date:
     May 25, 2023
 
 Version:
-    1.0.
+    1.1.
 
 Description:
     DelAyrUco - Analyser
@@ -31,6 +31,9 @@ Description:
     6. Finally print results.
 
     Results are calculated as Mean and standard deviation, with each condition and tile.
+
+Updates: 
+    1.1 fixes for vertical layout
 
 Licensing Terms: 
     Licensed to the Apache Software Foundation (ASF) under one
@@ -85,7 +88,7 @@ print(f'Starting to analyse file {inputfilename} with mode {outputmode} and fixe
 # DEBUG settings
 videooffset = args.videooffset # start video after a period of time, currently not used
 max_id_distance = 300 # filter out any wrong values that do not fall into a 10sec delay time / filtering is needed to filter out wrong detections because of distortions like motion blur
-min_marker_size = 5000 # filter out marker that are smaller (in square pixel)
+min_marker_size = 1000 # filter out marker that are smaller (in square pixel)
 
 # open video file
 cap = cv2.VideoCapture(inputfilename)
@@ -213,53 +216,62 @@ while not exit_programm:
         top_corner_y = -1
         top_corner_x = -1
         top_l_corner_index = -1
+        calibration_l_marker_index = -1
+        calibration_h_marker_index = -1
 
+        for index, corners in enumerate(markerCorners):
+            #print (f'{index} - {corners}')
+            if top_corner_y <= -1 or top_corner_y > corners[0][0][1] or top_corner_x > corners[0][0][0]:
+                top_corner_y = corners[0][0][1]
+                top_corner_x = corners[0][0][0]
+                top_l_corner_index = index
+        
+        # set the calibration marker indexes
+        if (top_l_corner_index == 0):
+            calibration_l_marker_index = 0
+            calibration_h_marker_index = 1
+        else:
+            calibration_l_marker_index = 1
+            calibration_h_marker_index = 0
+
+        #layout it set to auto-detect, lets detect
         if layout < 0:
-            for index, corners in enumerate(markerCorners):
-                #print (f'{index} - {corners}')
-                if top_corner_y <= -1 or top_corner_y > corners[0][0][1] or top_corner_x > corners[0][0][0]:
-                    top_corner_y = corners[0][0][1]
-                    top_corner_x = corners[0][0][0]
-                    top_l_corner_index = index
-
-            if (index == 0):
+            #lets check if L marker is top of H marker
+            if markerCorners[calibration_l_marker_index][0][0][1] < markerCorners[calibration_h_marker_index][0][0][1]:
                 layout = 1
-                calibration_l_marker_index = 0
-                calibration_h_marker_index = 1
             else:
                 layout = 0
-                calibration_l_marker_index = 1
-                calibration_h_marker_index = 0
+
             
-            print(f'Calibration marker found - layout is set to {layout}')
         elif layout == 0:
             calibration_l_marker_index = 1
             calibration_h_marker_index = 0
         else: # layout == 1:
-            calibration_l_marker_index = 0
-            calibration_h_marker_index = 1
+            print(f'Lets fix layout 1')
+            calibration_l_marker_index = 1
+            calibration_h_marker_index = 0
+            
+        print(f'Calibration marker found - layout is set to {layout}')
 
         calibration_l_marker_corners = markerCorners[calibration_l_marker_index]
         calibration_h_marker_corners = markerCorners[calibration_h_marker_index]
+        
+        print(f'calibration_l_marker_corners {calibration_l_marker_corners}')
+        print(f'calibration_h_marker_corners {calibration_h_marker_corners}')
     
     #find the calibration marker index
     calibration_l_marker_index = -1
     calibration_h_marker_index = -1
-    if (num_markers == 2):
-        if layout == 0:
-            calibration_l_marker_index = 1
-            calibration_h_marker_index = 0
-        else:
-            calibration_l_marker_index = 0
-            calibration_h_marker_index = 1
+    if (num_markers == 2 and is_condition_initiated):
         # is we have 2 markers we move out of the current condition
+        print(f'... Condition ended')
         is_condition_initiated = False
-    else:
-        for index, corners in enumerate(markerCorners):
-            if (corners == calibration_l_marker_corners).all():
-                calibration_l_marker_index = index
-            elif (corners == calibration_h_marker_corners).all():
-                calibration_h_marker_index = index
+    #find calibration marker based on previous corner detection
+    for index, corners in enumerate(markerCorners):
+        if (corners == calibration_l_marker_corners).all():
+            calibration_l_marker_index = index
+        elif (corners == calibration_h_marker_corners).all():
+            calibration_h_marker_index = index
 
     if ( calibration_l_marker_index == -1 or calibration_h_marker_index == -1):
         # NOTE: we always asume the calibration marker in the image and at the same place
@@ -268,13 +280,20 @@ while not exit_programm:
         continue
 
     for index, corners in enumerate(markerCorners):
-        if (index in [calibration_l_marker_index, calibration_h_marker_index]):
+        if (index in [calibration_l_marker_index]):
             position = (int(corners[0][0][0]), int(corners[0][0][1]))  # (x, y) coordinates of the text position
             font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = 2.0
+            font_scale = 1.0
             color = (0, 255, 0)  # Text color in BGR format (white in this case)
             thickness = 2  # Line thickness
-            cv2.putText(out_image, 'calib', position, font, font_scale, color, thickness)
+            cv2.putText(out_image, 'calib-l', position, font, font_scale, color, thickness)
+        if (index in [calibration_h_marker_index]):
+            position = (int(corners[0][0][0]), int(corners[0][0][1]))  # (x, y) coordinates of the text position
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 1.0
+            color = (0, 255, 0)  # Text color in BGR format (white in this case)
+            thickness = 2  # Line thickness
+            cv2.putText(out_image, 'calib-h', position, font, font_scale, color, thickness)
 
     calibration_marker_id = markerIds[calibration_l_marker_index][0] + (markerIds[calibration_h_marker_index][0] * 1000)
     #compensate if h marker runs over 1000
@@ -289,7 +308,7 @@ while not exit_programm:
         base_index = calibration_marker_id
         last_calibration_marker_id = calibration_marker_id
         # print(f'set base_timestamp - {base_timestamp} - index {base_index}')
-        cv2.waitKey(1000)
+        #cv2.waitKey(1000)
         continue #do not use first frame
 
     calibration_delta = video_timestamp - last_calibration_timestamp
@@ -362,10 +381,9 @@ while not exit_programm:
 
             do_calibration_snapshot = True
             is_condition_initiated = True
-            print(f'Condition {current_condition} initialized ...')
+            print(f'Condition {current_condition} initialized ... tiles = {num_tiles}')
             cv2.waitKey(1000)
 
-        assert layout < 2 # below code only works for horizontal layout
         tile_l_marker_corner_index = {}
         tile_h_marker_corner_index = {}
         for index, corners in enumerate(markerCorners):
@@ -392,13 +410,21 @@ while not exit_programm:
             tile_l_marker_index = tile_l_marker_corner_index[tile_index]
 
             for index, corners in enumerate(markerCorners):
-                if (index in [tile_h_marker_index, tile_l_marker_index]):
+                if (index in [tile_h_marker_index]):
                     position = (int(corners[0][3][0]), int(corners[0][3][1]))  # (x, y) coordinates of the text position
                     font = cv2.FONT_HERSHEY_SIMPLEX
-                    font_scale = 2.0
+                    font_scale = 1.0
                     color = (0, 255, 0)  # Text color in BGR format (white in this case)
                     thickness = 2  # Line thickness
-                    cv2.putText(out_image, f'Tile {tile_index}', position, font, font_scale, color, thickness)
+                    cv2.putText(out_image, f'Tile {tile_index} - H', position, font, font_scale, color, thickness)
+
+                if (index in [tile_l_marker_index]):
+                    position = (int(corners[0][3][0]), int(corners[0][3][1]))  # (x, y) coordinates of the text position
+                    font = cv2.FONT_HERSHEY_SIMPLEX
+                    font_scale = 1.0
+                    color = (0, 255, 0)  # Text color in BGR format (white in this case)
+                    thickness = 2  # Line thickness
+                    cv2.putText(out_image, f'Tile {tile_index} - L', position, font, font_scale, color, thickness)
 
             # tile_index = tile_index #str(tile_index) # lets use a string for dict access
             #if any(value in [tile_h_marker_index, tile_l_marker_index] for value in [calibration_l_marker_index, calibration_h_marker_index]):
@@ -420,10 +446,12 @@ while not exit_programm:
 
             if tile_marker_id != latency_conditions[current_condition][tile_index]["last_id"]:
                 if tile_marker_id < latency_conditions[current_condition][tile_index]["last_id"]:
+                    print (f'skip frame ... tile_marker_id < latency_conditions')
                     pass #latency_conditions[current_condition][tile_index]["lost_frames"] += 1 
                     # for now pass but we might want to increase lost frame counter
                 else:
                     if abs(tile_marker_id - latency_conditions[current_condition][tile_index]["last_id"]) >= max_id_distance:
+                        print (f'skip frame ... filter for most likely wrong ArUco matches')
                         pass #ignore this case for now / this is the filter for most likely wrong ArUco matches (based on distortions like motion blur)
                     elif tile_marker_id in calibration_timestamp:
                         if tile_marker_id > latency_conditions[current_condition][tile_index]["last_id"] + 1:
@@ -436,13 +464,16 @@ while not exit_programm:
                             print (f'tile_marker_id {tile_marker_id} - last_id {latency_conditions[current_condition][tile_index]["last_id"]}')
                             cv2.waitKey(0)
                     else:
-                        # print (f'Marker not found in calibration {tile_marker_id} - {calibration_timestamp}')
+                        print (f'Marker not found in calibration {tile_marker_id}')
                         if tile_marker_id > latency_conditions[current_condition][tile_index]["last_id"] + 1:
                             latency_conditions[current_condition][tile_index]["lost_frames"] += (tile_marker_id - latency_conditions[current_condition][tile_index]["last_id"]) - 1
                         else:
                             latency_conditions[current_condition][tile_index]["lost_frames"] += 1
 
                     latency_conditions[current_condition][tile_index]["last_id"] = tile_marker_id
+        
+        #print (f'latency_conditions {latency_conditions}')
+            
 
     # display the screenshot with detected markers
     cv2.imshow("DelAyrUco Analyser", out_image ) #cv2.resize(out_image, (640, 480)))
